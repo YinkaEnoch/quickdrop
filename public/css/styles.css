@@ -1,0 +1,363 @@
+/* QuickDrop — external stylesheet (CSP forbids inline styles). */
+
+:root {
+  --bg: #f4f6fb;
+  --panel: #ffffff;
+  --ink: #1c2333;
+  --ink-soft: #5b6478;
+  --accent: #3b5bdb;
+  --accent-ink: #ffffff;
+  --accent-press: #2f49b8;
+  --danger: #c92a2a;
+  --notice-bg: #e7f5ec;
+  --notice-ink: #1e7a43;
+  --line: #d9deea;
+  --radius: 10px;
+  --shadow: 0 8px 24px rgba(28, 35, 51, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    'Helvetica Neue',
+    Arial,
+    sans-serif;
+  line-height: 1.5;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.site-header {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 2.2rem 1.25rem 0.5rem;
+}
+
+.logo {
+  margin: 0;
+  font-size: 2rem;
+  letter-spacing: -0.02em;
+}
+
+.logo span {
+  color: var(--accent);
+}
+
+.tagline {
+  margin: 0.35rem 0 0;
+  color: var(--ink-soft);
+  max-width: 56ch;
+}
+
+.layout {
+  max-width: 1040px;
+  margin: 1.5rem auto 2rem;
+  padding: 0 1.25rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  align-items: start;
+  flex: 1;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1.4rem 1.4rem 1.6rem;
+}
+
+.panel h2 {
+  margin: 0 0 1rem;
+  font-size: 1.25rem;
+}
+
+.panel h3 {
+  margin: 0 0 0.6rem;
+  font-size: 1.05rem;
+}
+
+.field-label {
+  display: block;
+  font-weight: 600;
+  font-size: 0.92rem;
+  margin: 1rem 0 0.35rem;
+}
+
+textarea,
+input[type='text'] {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.6rem 0.75rem;
+  font: inherit;
+  color: var(--ink);
+  background: #fbfcfe;
+}
+
+textarea:focus-visible,
+input[type='text']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.hint {
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  margin: 0.6rem 0 1rem;
+}
+
+/* Buttons ------------------------------------------------------------- */
+.btn {
+  border: 1px solid var(--line);
+  background: #eef1f8;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  border-radius: var(--radius);
+  padding: 0.55rem 1.1rem;
+  cursor: pointer;
+}
+
+.btn:hover {
+  background: #e3e8f4;
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.btn-primary:hover {
+  background: var(--accent-press);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Drop zone & file lists --------------------------------------------- */
+.drop-zone {
+  border: 2px dashed var(--line);
+  border-radius: var(--radius);
+  padding: 1.4rem 1rem;
+  text-align: center;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.drop-zone p {
+  margin: 0;
+}
+
+.drop-zone:hover,
+.drop-zone.dragover {
+  border-color: var(--accent);
+  background: #eef2ff;
+  color: var(--ink);
+}
+
+.file-list {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+}
+
+.file-list:empty {
+  margin: 0;
+}
+
+.file-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.45rem 0.7rem;
+  margin-bottom: 0.4rem;
+  background: #fbfcfe;
+  font-size: 0.92rem;
+}
+
+.file-item .file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-item .file-size {
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.file-remove {
+  border: none;
+  background: none;
+  color: var(--danger);
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 0 0.2rem;
+  flex-shrink: 0;
+}
+
+/* Progress, errors, results ------------------------------------------ */
+.progress {
+  margin-top: 1rem;
+  height: 10px;
+  background: #e3e8f4;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width 0.12s ease-out;
+}
+
+.error {
+  color: var(--danger);
+  background: #fff0f0;
+  border: 1px solid #ffc9c9;
+  border-radius: 8px;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.92rem;
+  margin: 0.9rem 0 0;
+}
+
+.notice {
+  color: var(--notice-ink);
+  background: var(--notice-bg);
+  border: 1px solid #b7e4c7;
+  border-radius: 8px;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.92rem;
+  margin: 0.9rem 0 0;
+}
+
+.result {
+  margin-top: 1.1rem;
+  border-top: 1px dashed var(--line);
+  padding-top: 1rem;
+}
+
+.result-label {
+  margin: 0 0 0.35rem;
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+
+.share-key {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 1.9rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: var(--accent);
+  margin: 0 0 0.6rem;
+}
+
+/* Receive panel ------------------------------------------------------- */
+.key-row {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.key-row input {
+  flex: 1;
+  text-transform: uppercase;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: 0.1em;
+}
+
+.details {
+  margin-top: 1.1rem;
+  border-top: 1px dashed var(--line);
+  padding-top: 1rem;
+}
+
+.text-preview {
+  background: #f1f4fa;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.7rem 0.8rem;
+  font-size: 0.9rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 14rem;
+  overflow: auto;
+  margin: 0.5rem 0 0;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+
+/* Footer & responsive -------------------------------------------------- */
+.site-footer {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 0 1.25rem 2rem;
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+}
+
+.site-footer p {
+  margin: 0;
+}
+
+@media (max-width: 860px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .site-header {
+    padding-top: 1.5rem;
+  }
+
+  .share-key {
+    font-size: 1.55rem;
+  }
+}
+
+
+/* Clipboard fallback scratch (kept off-screen; no inline styles allowed) */
+.clipboard-scratch {
+  position: fixed;
+  left: -9999px;
+  top: 0;
+  opacity: 0;
+}
+

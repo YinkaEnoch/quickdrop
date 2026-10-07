@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>QuickDrop — temporary file &amp; text transfer</title>
+    <meta
+      name="description"
+      content="Move files and text between devices with a single-use key. Deleted after download or expiry."
+    />
+    <link rel="stylesheet" href="/public/css/styles.css" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📦</text></svg>" />
+    <script src="/public/js/app.js" defer></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <h1 class="logo">Quick<span>Drop</span></h1>
+      <p class="tagline">
+        Move files and text between devices with a short, single-use key. Everything is deleted
+        after the first download or when it expires.
+      </p>
+    </header>
+
+    <main
+      id="app"
+      class="layout"
+      data-max-file-size-mb="<%= limits.maxFileSizeMb %>"
+      data-max-files="<%= limits.maxFiles %>"
+      data-max-text-kb="<%= limits.maxTextKb %>"
+      data-expiration-minutes="<%= limits.expirationMinutes %>"
+    >
+      <section class="panel" aria-labelledby="send-heading">
+        <h2 id="send-heading">Send</h2>
+
+        <div id="drop-zone" class="drop-zone" tabindex="0" role="button"
+             aria-label="Add files: drop them here or press Enter to browse">
+          <p><strong>Drop files here</strong> or click to browse</p>
+          <input type="file" id="file-input" multiple hidden />
+        </div>
+
+        <ul id="file-list" class="file-list" aria-live="polite"></ul>
+
+        <label class="field-label" for="text-input">Text (optional)</label>
+        <textarea
+          id="text-input"
+          rows="5"
+          placeholder="Paste a note, a link, credentials… anything textual."
+          spellcheck="false"
+        ></textarea>
+
+        <p id="send-hint" class="hint">
+          Up to <%= limits.maxFiles %> files, <%= limits.maxFileSizeMb %> MB each, <%=
+          limits.maxTextKb %> KB of text · expires after <%= limits.expirationMinutes %> minutes.
+        </p>
+
+        <button id="send-btn" class="btn btn-primary" type="button">Create transfer</button>
+
+        <div id="upload-progress" class="progress hidden" role="progressbar"
+             aria-label="Upload progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <div id="upload-progress-bar" class="progress-bar"></div>
+        </div>
+
+        <p id="send-error" class="error hidden" role="alert"></p>
+
+        <div id="send-result" class="result hidden">
+          <p class="result-label">Your single-use key:</p>
+          <p id="share-key" class="share-key" data-key=""></p>
+          <button id="copy-key-btn" class="btn" type="button">Copy key</button>
+          <p class="hint">
+            Share it with whoever should receive the transfer. It stops working after the first
+            completed download.
+          </p>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="receive-heading">
+        <h2 id="receive-heading">Receive</h2>
+
+        <label class="field-label" for="key-input">Key from the sender</label>
+        <div class="key-row">
+          <input
+            id="key-input"
+            type="text"
+            autocomplete="off"
+            autocapitalize="characters"
+            spellcheck="false"
+            maxlength="9"
+            placeholder="XXXX-XXXX"
+            aria-describedby="receive-error"
+          />
+          <button id="retrieve-btn" class="btn btn-primary" type="button">Retrieve</button>
+        </div>
+
+        <p id="receive-error" class="error hidden" role="alert"></p>
+
+        <div id="transfer-details" class="details hidden">
+          <h3>Transfer contents</h3>
+          <ul id="detail-files" class="file-list"></ul>
+          <pre id="detail-text" class="text-preview hidden"></pre>
+          <p id="detail-expiry" class="hint"></p>
+
+          <div class="actions">
+            <button id="copy-text-btn" class="btn hidden" type="button">Copy text</button>
+            <button id="download-text-btn" class="btn hidden" type="button">Download text</button>
+            <button id="download-all-btn" class="btn btn-primary" type="button">
+              Download everything
+            </button>
+          </div>
+
+          <p id="consume-status" class="notice hidden" role="status"></p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>
+        No accounts, no history. Transfers are deleted on first successful download or at expiry —
+        whichever comes first.
+      </p>
+    </footer>
+  </body>
+</html>
+
