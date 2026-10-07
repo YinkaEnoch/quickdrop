@@ -29,7 +29,37 @@
       data-max-text-kb="<%= limits.maxTextKb %>"
       data-expiration-minutes="<%= limits.expirationMinutes %>"
     >
-      <section class="panel" aria-labelledby="send-heading">
+      <div class="tabs" role="tablist" aria-label="Choose Send or Receive">
+        <button
+          id="tab-send"
+          class="tab"
+          role="tab"
+          type="button"
+          aria-selected="true"
+          aria-controls="send-panel"
+        >
+          Send
+        </button>
+        <button
+          id="tab-receive"
+          class="tab"
+          role="tab"
+          type="button"
+          aria-selected="false"
+          aria-controls="receive-panel"
+          tabindex="-1"
+        >
+          Receive
+        </button>
+      </div>
+
+      <section
+        id="send-panel"
+        class="panel"
+        role="tabpanel"
+        aria-labelledby="send-heading"
+        tabindex="0"
+      >
         <h2 id="send-heading">Send</h2>
 
         <div id="drop-zone" class="drop-zone" tabindex="0" role="button"
@@ -73,7 +103,13 @@
         </div>
       </section>
 
-      <section class="panel" aria-labelledby="receive-heading">
+      <section
+        id="receive-panel"
+        class="panel hidden"
+        role="tabpanel"
+        aria-labelledby="receive-heading"
+        tabindex="0"
+      >
         <h2 id="receive-heading">Receive</h2>
 
         <label class="field-label" for="key-input">Key from the sender</label>

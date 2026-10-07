@@ -43,7 +43,7 @@ body {
 }
 
 .site-header {
-  max-width: 1040px;
+  max-width: 680px;
   margin: 0 auto;
   padding: 2.2rem 1.25rem 0.5rem;
 }
@@ -65,14 +65,57 @@ body {
 }
 
 .layout {
-  max-width: 1040px;
+  max-width: 680px;
   margin: 1.5rem auto 2rem;
   padding: 0 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  align-items: stretch;
+  flex: 1;
+}
+
+/* Tabs ---------------------------------------------------------------- */
+.tabs {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 1.25rem;
-  align-items: start;
-  flex: 1;
+  gap: 0.5rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 0.5rem;
+}
+
+.tab {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink-soft);
+  font: inherit;
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 0.65rem 1rem;
+  cursor: pointer;
+}
+
+.tab:hover {
+  background: #eef1f8;
+  color: var(--ink);
+}
+
+.tab[aria-selected='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.tab[aria-selected='true']:hover {
+  background: var(--accent-press);
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .panel {
@@ -327,7 +370,7 @@ input[type='text']:focus-visible {
 
 /* Footer & responsive -------------------------------------------------- */
 .site-footer {
-  max-width: 1040px;
+  max-width: 680px;
   margin: 0 auto;
   padding: 0 1.25rem 2rem;
   color: var(--ink-soft);
@@ -339,10 +382,6 @@ input[type='text']:focus-visible {
 }
 
 @media (max-width: 860px) {
-  .layout {
-    grid-template-columns: 1fr;
-  }
-
   .site-header {
     padding-top: 1.5rem;
   }

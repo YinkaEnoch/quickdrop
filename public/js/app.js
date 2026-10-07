@@ -16,6 +16,10 @@
   };
 
   const el = {
+    tabSend: document.getElementById('tab-send'),
+    tabReceive: document.getElementById('tab-receive'),
+    sendPanel: document.getElementById('send-panel'),
+    receivePanel: document.getElementById('receive-panel'),
     dropZone: document.getElementById('drop-zone'),
     fileInput: document.getElementById('file-input'),
     fileList: document.getElementById('file-list'),
@@ -46,12 +50,43 @@
   /** Last retrieved transfer (non-consuming metadata view). */
   let current = null;
   let pollTimer = null;
+  /** Which tab's panel is visible: 'send' | 'receive'. Defaults to Send. */
+  let activeTab = 'send';
 
   // --- helpers ---------------------------------------------------------
 
   function setHidden(node, hidden) {
     node.classList.toggle('hidden', hidden);
   }
+
+  // --- tabs: show one panel at a time ------------------------------------
+
+  function setActiveTab(name, focusTab) {
+    activeTab = name;
+    const showSend = name === 'send';
+    setHidden(el.sendPanel, !showSend);
+    setHidden(el.receivePanel, showSend);
+    el.tabSend.setAttribute('aria-selected', String(showSend));
+    el.tabReceive.setAttribute('aria-selected', String(!showSend));
+    el.tabSend.tabIndex = showSend ? 0 : -1;
+    el.tabReceive.tabIndex = showSend ? -1 : 0;
+    if (focusTab) {
+      (showSend ? el.tabSend : el.tabReceive).focus();
+    }
+  }
+
+  el.tabSend.addEventListener('click', () => setActiveTab('send', false));
+  el.tabReceive.addEventListener('click', () => setActiveTab('receive', false));
+
+  // Arrow-key roving tabindex between tabs (WAI-ARIA tab pattern).
+  function onTabKeydown(event) {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    setActiveTab(activeTab === 'send' ? 'receive' : 'send', true);
+  }
+
+  el.tabSend.addEventListener('keydown', onTabKeydown);
+  el.tabReceive.addEventListener('keydown', onTabKeydown);
 
   function showError(node, message) {
     node.textContent = message;
