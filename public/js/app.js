@@ -290,6 +290,11 @@
         setProgress(100);
         showShareKey(body.key);
         resetSendForm();
+        // Mirror the new transfer into the Receive panel so the uploader
+        // sees the Download button immediately (same-device handoff).
+        // Retrieve is non-consuming, so the single-use download stays armed.
+        el.keyInput.value = body.key;
+        void retrieve();
       } else {
         showError(el.sendError, friendlyError(xhr.status, body && body.error));
       }
@@ -354,6 +359,12 @@
 
   async function retrieve() {
     showError(el.receiveError, '');
+    // A fresh lookup supersedes any in-flight consumption watch from a
+    // previous transfer (it keys off the input value, which may just change).
+    if (pollTimer !== null) {
+      window.clearInterval(pollTimer);
+      pollTimer = null;
+    }
     const key = compactKey(el.keyInput.value);
     if (key.length !== 8) {
       showError(el.receiveError, 'Enter the 8-character key you received (XXXX-XXXX).');
@@ -397,7 +408,7 @@
     el.detailExpiry.textContent = '';
     setHidden(el.copyTextBtn, true);
     setHidden(el.downloadTextBtn, true);
-    setHidden(el.downloadAllBtn, false);
+    setHidden(el.downloadAllBtn, true);
     setHidden(el.consumeStatus, true);
     el.consumeStatus.textContent = '';
     setHidden(el.details, true);
