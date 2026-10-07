@@ -1,6 +1,7 @@
 {
   "name": "quickdrop",
   "version": "1.0.0",
+  "license": "ISC",
   "description": "Ephemeral, single-use file and text transfers between devices. No accounts, no durable storage.",
   "type": "module",
   "private": true,
