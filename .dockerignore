@@ -1,0 +1,10 @@
+node_modules
+dist
+.tmp
+data
+storage
+.env
+.env.*
+!.env.example
+.git
+*.md

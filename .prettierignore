@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.tmp/
+data/
+storage/
+package-lock.json
+views/
+public/
+*.md
+*.ejs
