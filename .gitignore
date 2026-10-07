@@ -10,8 +10,10 @@ dist/
 !.env.example
 
 # Runtime data (SQLite + uploaded files)
-data/
-storage/
+# Root-anchored: unanchored `data/` or `storage/` would also match and
+# hide source directories such as src/storage/.
+/data/
+/storage/
 
 # Test scratch space and agent notes
 .tmp/
