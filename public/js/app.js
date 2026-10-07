@@ -29,6 +29,7 @@
     copyKeyBtn: document.getElementById('copy-key-btn'),
     keyInput: document.getElementById('key-input'),
     retrieveBtn: document.getElementById('retrieve-btn'),
+    clearReceiveBtn: document.getElementById('clear-receive-btn'),
     receiveError: document.getElementById('receive-error'),
     details: document.getElementById('transfer-details'),
     detailFiles: document.getElementById('detail-files'),
@@ -345,6 +346,7 @@
     const expires = new Date(meta.expiresAt);
     el.detailExpiry.textContent =
       `Expires ${expires.toLocaleString()} · ${meta.files.length} file(s)`;
+    setHidden(el.downloadAllBtn, false);
     setHidden(el.consumeStatus, true);
     el.consumeStatus.textContent = '';
     setHidden(el.details, false);
@@ -371,6 +373,7 @@
   }
 
   el.retrieveBtn.addEventListener('click', retrieve);
+  el.clearReceiveBtn.addEventListener('click', clearReceive);
   el.keyInput.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') retrieve();
   });
@@ -378,6 +381,28 @@
     const key = compactKey(el.keyInput.value);
     if (key.length > 0) el.keyInput.value = displayKey(key);
   });
+
+  /** Reset the Receive panel: key input, errors, details, and state. */
+  function clearReceive() {
+    if (pollTimer !== null) {
+      window.clearInterval(pollTimer);
+      pollTimer = null;
+    }
+    current = null;
+    el.keyInput.value = '';
+    showError(el.receiveError, '');
+    el.detailFiles.replaceChildren();
+    el.detailText.textContent = '';
+    setHidden(el.detailText, true);
+    el.detailExpiry.textContent = '';
+    setHidden(el.copyTextBtn, true);
+    setHidden(el.downloadTextBtn, true);
+    setHidden(el.downloadAllBtn, false);
+    setHidden(el.consumeStatus, true);
+    el.consumeStatus.textContent = '';
+    setHidden(el.details, true);
+    el.keyInput.focus();
+  }
 
   el.copyTextBtn.addEventListener('click', async () => {
     if (!current) return;
