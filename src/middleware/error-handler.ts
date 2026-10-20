@@ -20,7 +20,7 @@ export function errorHandler(logger: Logger): ErrorRequestHandler {
       return;
     }
 
-    const fields = { method: req.method, path: sanitizePath(req.path) };
+    const fields = { method: req.method, path: sanitizePath(req.originalUrl) };
     if (error instanceof AppError) {
       logger.warn('request rejected', { ...fields, status: error.status });
       res.status(error.status).json({ error: error.userMessage });

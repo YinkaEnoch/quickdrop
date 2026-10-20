@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import type { LogLevel } from '../lib/logger.js';
+import type { Logger, LogLevel } from '../lib/logger.js';
 import { projectRoot } from './paths.js';
 
 export type NodeEnv = 'development' | 'production' | 'test';
@@ -66,7 +66,8 @@ function readEnum<T extends string>(name: string, fallback: T, allowed: readonly
  * `overrides` (trusted, not re-validated — used by tests for temp paths and
  * tight limits). Invalid env values fail fast with a clear message.
  */
-export function loadConfig(overrides: Partial<Config> = {}): Config {
+export function loadConfig(overrides: Partial<Config> = {}, logger?: Logger): Config {
+  logger?.debug('config loading');
   loadDotEnv();
 
   const maxFileMb = readInt('MAX_FILE_SIZE_MB', 2048, 1, 1_048_576);
@@ -89,5 +90,20 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
     logLevel: readEnum<LogLevel>('LOG_LEVEL', 'info', ['debug', 'info', 'warn', 'error']),
   };
 
-  return Object.freeze({ ...config, ...overrides });
+  const finalConfig = Object.freeze({ ...config, ...overrides });
+  logger?.debug('config loaded', {
+    nodeEnv: finalConfig.nodeEnv,
+    port: finalConfig.port,
+    host: finalConfig.host,
+    maxFileSizeBytes: finalConfig.maxFileSizeBytes,
+    maxFilesPerTransfer: finalConfig.maxFilesPerTransfer,
+    maxTextLengthBytes: finalConfig.maxTextLengthBytes,
+    transferExpirationMinutes: finalConfig.transferExpirationMinutes,
+    cleanupIntervalMs: finalConfig.cleanupIntervalMs,
+    rateLimitWindowMs: finalConfig.rateLimitWindowMs,
+    rateLimitMaxRequests: finalConfig.rateLimitMaxRequests,
+    trustProxy: finalConfig.trustProxy,
+    logLevel: finalConfig.logLevel,
+  });
+  return finalConfig;
 }

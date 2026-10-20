@@ -58,3 +58,11 @@ export function createLogger(level: LogLevel = 'info', sink?: LogSink): Logger {
     error: (message, fields) => emit('error', message, fields),
   };
 }
+
+/** No-op logger for optional injection points (tests, pure contexts). */
+export const noopLogger: Logger = {
+  debug: () => undefined,
+  info: () => undefined,
+  warn: () => undefined,
+  error: () => undefined,
+};

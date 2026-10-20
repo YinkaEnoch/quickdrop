@@ -5,8 +5,86 @@
  * external file; no inline script/style anywhere). Never logs keys or text.
  */
 (function () {
-  const app = document.getElementById('app');
-  if (!app) return;
+  // --- frontend call logger ----------------------------------------------
+  // Structured console logging for every backend call so errors are easy to
+  // spot in DevTools. Privacy-safe by construction: URLs are sanitized
+  // (share keys collapse to ***), and bodies/keys/text are never logged —
+  // only method, sanitized URL, status, duration, and error messages.
+
+  var LOG_LEVELS = { debug: 10, info: 20, warn: 30, error: 40 };
+  var currentLevel = 'debug';
+  try {
+    var stored = window.localStorage.getItem('quickdrop:log-level');
+    if (stored === 'debug' || stored === 'info' || stored === 'warn' || stored === 'error') {
+      currentLevel = stored;
+    }
+  } catch {
+    // Storage unavailable (private mode) — keep default level.
+  }
+
+  /** Change verbosity at runtime: `qdLog.setLevel('debug')`. Never throws. */
+  function setLogLevel(level) {
+    if (level !== 'debug' && level !== 'info' && level !== 'warn' && level !== 'error') return;
+    currentLevel = level;
+    try {
+      window.localStorage.setItem('quickdrop:log-level', level);
+    } catch {
+      // Ignore persistence failures.
+    }
+  }
+
+  function sanitizeUrl(rawUrl) {
+    var url = String(rawUrl).split('?')[0].split('#')[0];
+    return url.replace(/^(\/api\/transfers\/).+$/i, '$1***');
+  }
+
+  function emit(level, message, fields) {
+    if (LOG_LEVELS[level] < LOG_LEVELS[currentLevel]) return;
+    var entry = {
+      time: new Date().toISOString(),
+      level: level,
+      scope: 'quickdrop-ui',
+      message: message,
+      fields: fields || {},
+    };
+    try {
+      var line = '[quickdrop-ui][' + level + '] ' + message + ' ' + JSON.stringify(entry.fields);
+      if (level === 'error') window.console.error(line);
+      else if (level === 'warn') window.console.warn(line);
+      else if (level === 'info') window.console.info(line);
+      else window.console.debug(line);
+    } catch {
+      // Logging must never break the UI.
+    }
+  }
+
+  var uiLog = {
+    debug: function (message, fields) {
+      emit('debug', message, fields);
+    },
+    info: function (message, fields) {
+      emit('info', message, fields);
+    },
+    warn: function (message, fields) {
+      emit('warn', message, fields);
+    },
+    error: function (message, fields) {
+      emit('error', message, fields);
+    },
+    setLevel: setLogLevel,
+  };
+
+  // Exposed for debugging (`qdLog.setLevel('debug')`) and headless tests.
+  window.qdLog = uiLog;
+
+  uiLog.debug('ui initializing');
+
+  var app = document.getElementById('app');
+  if (!app) {
+    uiLog.error('ui init failed: #app element missing');
+    return;
+  }
+  uiLog.debug('ui initialized');
 
   const limits = {
     maxFileSizeBytes: Number(app.dataset.maxFileSizeMb) * 1024 * 1024,
@@ -75,8 +153,14 @@
     }
   }
 
-  el.tabSend.addEventListener('click', () => setActiveTab('send', false));
-  el.tabReceive.addEventListener('click', () => setActiveTab('receive', false));
+  el.tabSend.addEventListener('click', () => {
+    uiLog.debug('tab switched', { tab: 'send' });
+    setActiveTab('send', false);
+  });
+  el.tabReceive.addEventListener('click', () => {
+    uiLog.debug('tab switched', { tab: 'receive' });
+    setActiveTab('receive', false);
+  });
 
   // Arrow-key roving tabindex between tabs (WAI-ARIA tab pattern).
   function onTabKeydown(event) {
@@ -132,16 +216,27 @@
     return 'Something went wrong. Please try again.';
   }
 
-  /** fetch wrapper: throws Error with `.status` set (0 = network failure). */
+  /** fetch wrapper with logging: throws Error with `.status` set (0 = network failure). */
   async function request(url, options) {
+    var method = (options && options.method) || 'GET';
+    var safeUrl = sanitizeUrl(url);
+    var startedAt = Date.now();
+    uiLog.debug('api request started', { method: method, url: safeUrl });
     let response;
     try {
       response = await fetch(url, options);
-    } catch {
-      const error = new Error('Network error — check your connection and try again.');
-      error.status = 0;
-      throw error;
+    } catch (error) {
+      uiLog.error('api request failed: network error', {
+        method: method,
+        url: safeUrl,
+        durationMs: Date.now() - startedAt,
+        error: error && error.message ? error.message : String(error),
+      });
+      const networkError = new Error('Network error — check your connection and try again.');
+      networkError.status = 0;
+      throw networkError;
     }
+    var durationMs = Date.now() - startedAt;
     let body = null;
     try {
       body = await response.json();
@@ -149,10 +244,24 @@
       /* non-JSON body */
     }
     if (!response.ok) {
-      const error = new Error(friendlyError(response.status, body && body.error));
+      var serverMessage = body && body.error;
+      uiLog.warn('api request failed', {
+        method: method,
+        url: safeUrl,
+        status: response.status,
+        durationMs: durationMs,
+        error: friendlyError(response.status, serverMessage),
+      });
+      const error = new Error(friendlyError(response.status, serverMessage));
       error.status = response.status;
       throw error;
     }
+    uiLog.debug('api request completed', {
+      method: method,
+      url: safeUrl,
+      status: response.status,
+      durationMs: durationMs,
+    });
     return body;
   }
 
@@ -206,6 +315,10 @@
     showError(el.sendError, '');
     for (const file of fileList) {
       if (send.files.length >= limits.maxFiles) {
+        uiLog.warn('file add rejected: too many files', {
+          fileCount: send.files.length,
+          maxFiles: limits.maxFiles,
+        });
         showError(
           el.sendError,
           `A transfer can contain at most ${limits.maxFiles} files.`,
@@ -213,6 +326,10 @@
         break;
       }
       if (file.size > limits.maxFileSizeBytes) {
+        uiLog.warn('file add rejected: file too large', {
+          fileBytes: file.size,
+          maxFileBytes: limits.maxFileSizeBytes,
+        });
         showError(
           el.sendError,
           `“${file.name}” exceeds the ${limits.maxFileSizeMb} MB per-file limit.`,
@@ -221,6 +338,7 @@
       }
       send.files.push(file);
     }
+    uiLog.debug('files staged', { fileCount: send.files.length });
     renderFileList();
   }
 
@@ -313,6 +431,14 @@
     const xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/transfers');
     xhr.responseType = 'json';
+    var uploadStartedAt = Date.now();
+    var fileCount = send.files.length;
+    uiLog.debug('api upload started', {
+      method: 'POST',
+      url: '/api/transfers',
+      fileCount: fileCount,
+      hasText: text.length > 0,
+    });
     xhr.upload.addEventListener('progress', (event) => {
       if (event.lengthComputable) {
         setProgress((event.loaded / event.total) * 100);
@@ -322,6 +448,13 @@
       const body = xhr.response;
       finishUpload();
       if (xhr.status >= 200 && xhr.status < 300 && body && body.key) {
+        uiLog.info('api upload completed', {
+          method: 'POST',
+          url: '/api/transfers',
+          status: xhr.status,
+          durationMs: Date.now() - uploadStartedAt,
+          fileCount: fileCount,
+        });
         setProgress(100);
         showShareKey(body.key);
         resetSendForm();
@@ -331,14 +464,36 @@
         el.keyInput.value = body.key;
         void retrieve();
       } else {
-        showError(el.sendError, friendlyError(xhr.status, body && body.error));
+        var serverMessage = friendlyError(xhr.status, body && body.error);
+        uiLog.warn('api upload failed', {
+          method: 'POST',
+          url: '/api/transfers',
+          status: xhr.status,
+          durationMs: Date.now() - uploadStartedAt,
+          fileCount: fileCount,
+          error: serverMessage,
+        });
+        showError(el.sendError, serverMessage);
       }
     });
     xhr.addEventListener('error', () => {
       finishUpload();
+      uiLog.error('api upload failed: network error', {
+        method: 'POST',
+        url: '/api/transfers',
+        durationMs: Date.now() - uploadStartedAt,
+        fileCount: fileCount,
+      });
       showError(el.sendError, 'Network error — check your connection and try again.');
     });
-    xhr.addEventListener('abort', finishUpload);
+    xhr.addEventListener('abort', () => {
+      uiLog.warn('api upload aborted', {
+        method: 'POST',
+        url: '/api/transfers',
+        fileCount: fileCount,
+      });
+      finishUpload();
+    });
     xhr.send(formData);
   }
 
@@ -402,16 +557,27 @@
     }
     const key = compactKey(el.keyInput.value);
     if (key.length !== 8) {
+      uiLog.warn('retrieve rejected: invalid key shape', { keyLength: key.length });
       showError(el.receiveError, 'Enter the 8-character key you received (XXXX-XXXX).');
       return;
     }
     el.keyInput.value = displayKey(key);
     el.retrieveBtn.disabled = true;
+    uiLog.debug('retrieve started');
     try {
-      renderDetails(await request(currentKeyUrl('')));
+      const meta = await request(currentKeyUrl(''));
+      uiLog.info('retrieve completed', {
+        fileCount: Array.isArray(meta.files) ? meta.files.length : 0,
+        hasText: typeof meta.text === 'string' && meta.text.length > 0,
+      });
+      renderDetails(meta);
     } catch (error) {
       current = null;
       setHidden(el.details, true);
+      uiLog.warn('retrieve failed', {
+        status: error.status || 0,
+        error: error.message,
+      });
       showError(el.receiveError, error.message);
     } finally {
       el.retrieveBtn.disabled = false;
@@ -454,11 +620,13 @@
     if (!current) return;
     try {
       await copyText(current.text || '');
+      uiLog.debug('text copied to clipboard');
       el.copyTextBtn.textContent = 'Copied!';
       window.setTimeout(() => {
         el.copyTextBtn.textContent = 'Copy text';
       }, 1500);
     } catch {
+      uiLog.warn('text copy failed');
       el.copyTextBtn.textContent = 'Copy failed';
     }
   });
@@ -467,6 +635,7 @@
   // everything” talks to /download, which is what consumes the transfer.
   el.downloadTextBtn.addEventListener('click', () => {
     if (!current || typeof current.text !== 'string') return;
+    uiLog.info('text file download started');
     const url = URL.createObjectURL(new Blob([current.text], { type: 'text/plain' }));
     const anchor = document.createElement('a');
     anchor.href = url;
@@ -501,11 +670,13 @@
   function watchConsumption() {
     if (pollTimer !== null) window.clearInterval(pollTimer);
     let attempts = 0;
+    uiLog.debug('consumption watch started');
     pollTimer = window.setInterval(async () => {
       attempts += 1;
       if (current === null) {
         window.clearInterval(pollTimer);
         pollTimer = null;
+        uiLog.debug('consumption watch stopped: no current transfer');
         return;
       }
       try {
@@ -517,6 +688,9 @@
         }
         if (attempts >= 30) {
           // Still present after ~30s: leave the UI as-is rather than lie.
+          uiLog.warn('consumption watch timed out: transfer still present', {
+            attempts: attempts,
+          });
           window.clearInterval(pollTimer);
           pollTimer = null;
         }
@@ -524,7 +698,14 @@
         window.clearInterval(pollTimer);
         pollTimer = null;
         if (error.status === 404) {
+          uiLog.info('consumption watch: transfer consumed', { attempts: attempts });
           setConsumed('Downloaded — this transfer has now been deleted.');
+        } else {
+          uiLog.warn('consumption watch poll failed', {
+            attempts: attempts,
+            status: error.status || 0,
+            error: error.message,
+          });
         }
       }
     }, 1000);
@@ -532,6 +713,10 @@
 
   el.downloadAllBtn.addEventListener('click', () => {
     if (!current) return;
+    uiLog.info('download started', {
+      fileCount: Array.isArray(current.files) ? current.files.length : 0,
+      hasText: typeof current.text === 'string' && current.text.length > 0,
+    });
     const anchor = document.createElement('a');
     anchor.href = currentKeyUrl('/download');
     anchor.rel = 'noopener';

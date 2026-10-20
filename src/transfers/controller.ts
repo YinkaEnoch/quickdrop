@@ -6,6 +6,9 @@ import multer from 'multer';
 import type { Config } from '../config/env.js';
 import { badRequest, payloadTooLarge } from '../lib/errors.js';
 import { formatShareKey } from '../lib/keys.js';
+import type { Logger } from '../lib/logger.js';
+import { noopLogger } from '../lib/logger.js';
+import { sanitizePath } from '../middleware/security.js';
 import type { FileStorage } from '../storage/file-storage.js';
 import { toMetadataDto, ZIP_TEXT_ENTRY_NAME, type DownloadPlan } from './transfer.types.js';
 import type { TransferService } from './service.js';
@@ -65,6 +68,7 @@ export interface TransferControllerDeps {
   config: Config;
   service: TransferService;
   storage: FileStorage;
+  logger?: Logger;
 }
 
 /**
@@ -75,6 +79,8 @@ export interface TransferControllerDeps {
  */
 export function createTransferController(deps: TransferControllerDeps) {
   const { config, service, storage } = deps;
+  const logger = deps.logger ?? noopLogger;
+  logger.debug('transfer controller initializing');
 
   const uploadMw = multer({
     storage: multer.diskStorage({
@@ -108,21 +114,40 @@ export function createTransferController(deps: TransferControllerDeps) {
 
   /** Multer wrapper: on error, remove partial uploads before forwarding. */
   const upload: RequestHandler = (req, res, next) => {
+    logger.debug('controller upload received', {
+      method: req.method,
+      path: sanitizePath(req.originalUrl),
+    });
     uploadMw(req, res, (error) => {
       if (error) {
+        logger.warn('controller upload rejected', {
+          path: sanitizePath(req.originalUrl),
+          error,
+        });
         sweepStaging(req);
         next(mapMulterError(error, config));
         return;
       }
+      const fileCount = (req.files as Express.Multer.File[] | undefined)?.length ?? 0;
+      logger.debug('controller upload staged', { fileCount });
       next();
     });
   };
 
   const create: RequestHandler = (req, res, next) => {
+    logger.debug('controller create started', {
+      method: req.method,
+      path: sanitizePath(req.originalUrl),
+    });
     try {
       const files = (req.files as Express.Multer.File[] | undefined) ?? [];
       const rawText = req.body?.text;
       const text = typeof rawText === 'string' ? rawText : null;
+      logger.debug('controller create payload', {
+        fileCount: files.length,
+        hasText: text !== null,
+        totalBytes: files.reduce((sum, file) => sum + file.size, 0),
+      });
       const bundle = service.create(
         {
           stagingPath: (req as StagedRequest).stagingDir ?? storage.stagingDir,
@@ -136,31 +161,57 @@ export function createTransferController(deps: TransferControllerDeps) {
         },
         Date.now(),
       );
+      logger.info('controller create succeeded', {
+        transferId: bundle.transfer.id,
+        fileCount: bundle.files.length,
+      });
       res.status(201).json({ key: formatShareKey(bundle.transfer.shareKey) });
     } catch (error) {
+      logger.warn('controller create failed', {
+        path: sanitizePath(req.originalUrl),
+        error,
+      });
       next(error);
     } finally {
       // Success moved the staging dir away (this is then an idempotent
       // no-op that also clears the active-set entry); failure removes the
       // leftovers. Service-side rollback already handled the final dir.
       sweepStaging(req);
+      logger.debug('controller create staging swept');
     }
   };
 
   const metadata: RequestHandler = (req, res, next) => {
+    logger.debug('controller metadata started', { path: sanitizePath(req.originalUrl) });
     try {
       // Non-consuming: works for ready and currently-downloading transfers.
-      res.json(toMetadataDto(service.get(keyParam(req))));
+      const bundle = service.get(keyParam(req));
+      logger.debug('controller metadata served', {
+        transferId: bundle.transfer.id,
+        fileCount: bundle.files.length,
+        status: bundle.transfer.status,
+      });
+      res.json(toMetadataDto(bundle));
     } catch (error) {
+      logger.debug('controller metadata failed', {
+        path: sanitizePath(req.originalUrl),
+        error,
+      });
       next(error);
     }
   };
 
   const cancel: RequestHandler = (req, res, next) => {
+    logger.debug('controller cancel started', { path: sanitizePath(req.originalUrl) });
     try {
       service.cancel(keyParam(req));
+      logger.info('controller cancel succeeded', { path: sanitizePath(req.originalUrl) });
       res.status(204).end();
     } catch (error) {
+      logger.debug('controller cancel failed', {
+        path: sanitizePath(req.originalUrl),
+        error,
+      });
       next(error);
     }
   };
@@ -172,10 +223,19 @@ export function createTransferController(deps: TransferControllerDeps) {
    * response and let the close handler release.
    */
   const download: RequestHandler = (req, res, next) => {
+    logger.debug('controller download started', { path: sanitizePath(req.originalUrl) });
     let plan: DownloadPlan;
     try {
       plan = service.prepareDownload(keyParam(req), Date.now());
+      logger.debug('controller download streaming', {
+        transferId: plan.transferId,
+        kind: plan.kind,
+      });
     } catch (error) {
+      logger.debug('controller download claim failed', {
+        path: sanitizePath(req.originalUrl),
+        error,
+      });
       next(error);
       return;
     }
@@ -184,17 +244,38 @@ export function createTransferController(deps: TransferControllerDeps) {
     const settle = (action: 'finalize' | 'release'): void => {
       if (settled) return;
       settled = true;
+      logger.debug('controller download settling', {
+        transferId: plan.transferId,
+        action,
+      });
       if (action === 'finalize') service.finalize(plan.transferId);
       else service.release(plan.transferId);
     };
 
     res.on('finish', () => settle('finalize'));
     res.on('close', () => {
-      if (!res.writableEnded) settle('release');
+      if (!res.writableEnded) {
+        logger.debug('controller download connection closed early', {
+          transferId: plan.transferId,
+        });
+        settle('release');
+      }
     });
-    res.on('error', () => settle('release'));
+    res.on('error', (error) => {
+      logger.warn('controller download response error', {
+        transferId: plan.transferId,
+        error,
+      });
+      settle('release');
+    });
 
     const fail = (error: unknown): void => {
+      logger.warn('controller download stream failed', {
+        transferId: plan.transferId,
+        kind: plan.kind,
+        headersSent: res.headersSent,
+        error,
+      });
       if (res.headersSent) {
         res.destroy(error instanceof Error ? error : new Error(String(error)));
         return;

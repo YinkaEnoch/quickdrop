@@ -51,7 +51,8 @@ export class TransferCleanup {
   constructor(private readonly deps: CleanupDeps) {}
 
   sweep(now = Date.now(), options: SweepOptions = {}): SweepStats {
-    const { activeDownloads, repository, storage } = this.deps;
+    const { activeDownloads, logger, repository, storage } = this.deps;
+    logger.debug('cleanup sweep started', { releaseAllClaims: options.releaseAllClaims === true });
     const stats: SweepStats = {
       expired: 0,
       staleClaims: 0,
@@ -62,6 +63,7 @@ export class TransferCleanup {
     };
 
     for (const transfer of repository.listExpired(now)) {
+      logger.debug('cleanup removing expired transfer', { transferId: transfer.id });
       repository.delete(transfer.id);
       storage.removeDir(storage.transferDir(transfer.id));
       stats.expired += 1;
@@ -69,7 +71,11 @@ export class TransferCleanup {
 
     const cutoff = options.releaseAllClaims === true ? null : now - STALE_CLAIM_GRACE_MS;
     for (const transfer of repository.listStaleClaims(cutoff)) {
-      if (activeDownloads.has(transfer.id)) continue; // live stream in this process
+      if (activeDownloads.has(transfer.id)) {
+        logger.debug('cleanup skipping active download', { transferId: transfer.id });
+        continue; // live stream in this process
+      }
+      logger.debug('cleanup releasing stale claim', { transferId: transfer.id });
       repository.release(transfer.id);
       stats.staleClaims += 1;
     }
@@ -79,6 +85,7 @@ export class TransferCleanup {
     for (const entry of storage.listTransferEntries()) {
       if (repository.findById(entry.name) !== null) continue;
       if (now - entry.mtimeMs < ORPHAN_GRACE_MS) continue;
+      logger.debug('cleanup removing orphan dir');
       storage.removeDir(entry.path);
       stats.orphanDirs += 1;
     }
@@ -86,6 +93,7 @@ export class TransferCleanup {
     // Entries absent from this process's staging set are crash leftovers.
     for (const entry of storage.listStaleStagingEntries()) {
       if (now - entry.mtimeMs < STAGING_GRACE_MS) continue;
+      logger.debug('cleanup removing stale staging dir');
       storage.removeDir(entry.path);
       stats.staleStagingDirs += 1;
     }
@@ -93,6 +101,7 @@ export class TransferCleanup {
     for (const transfer of repository.listAllWithFileCounts()) {
       if (transfer.fileCount === 0) continue; // text-only transfers have no dir
       if (storage.exists(storage.transferDir(transfer.id))) continue;
+      logger.debug('cleanup removing row with missing dir', { transferId: transfer.id });
       repository.delete(transfer.id);
       stats.rowsMissingDirs += 1;
     }
@@ -104,11 +113,13 @@ export class TransferCleanup {
       stats.staleStagingDirs +
       stats.rowsMissingDirs;
     if (stats.total > 0) this.deps.logger.info('cleanup sweep', { ...stats });
+    else logger.debug('cleanup sweep complete (nothing to do)');
     return stats;
   }
 
   /** Startup sweep (releasing lingering claims) followed by the interval sweep. */
   start(now = Date.now()): void {
+    this.deps.logger.debug('cleanup starting');
     this.sweep(now, { releaseAllClaims: true });
     if (this.timer !== null) return;
     this.timer = setInterval(() => {
@@ -119,11 +130,16 @@ export class TransferCleanup {
       }
     }, this.deps.intervalMs);
     this.timer.unref(); // never keeps the process alive on its own
+    this.deps.logger.debug('cleanup interval scheduled', { intervalMs: this.deps.intervalMs });
   }
 
   stop(): void {
-    if (this.timer === null) return;
+    if (this.timer === null) {
+      this.deps.logger.debug('cleanup stop skipped (not running)');
+      return;
+    }
     clearInterval(this.timer);
     this.timer = null;
+    this.deps.logger.debug('cleanup stopped');
   }
 }

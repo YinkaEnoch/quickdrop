@@ -1,5 +1,8 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { tooManyRequests } from '../lib/errors.js';
+import type { Logger } from '../lib/logger.js';
+import { noopLogger } from '../lib/logger.js';
+import { sanitizePath } from './security.js';
 
 export interface RateLimiterOptions {
   windowMs: number;
@@ -19,9 +22,13 @@ const MAX_TRACKED_IPS = 10_000;
  * Retry-After and drains any unread request body so the connection does not
  * stall. Health checks and static assets are not wired through this.
  */
-export function createRateLimiter(options: RateLimiterOptions): RequestHandler {
+export function createRateLimiter(
+  options: RateLimiterOptions,
+  logger: Logger = noopLogger,
+): RequestHandler {
   const { windowMs, max } = options;
   const windows = new Map<string, Window>();
+  logger.debug('rate limiter initialized', { windowMs, max });
 
   return (req: Request, res: Response, next: NextFunction): void => {
     const now = Date.now();
@@ -44,6 +51,10 @@ export function createRateLimiter(options: RateLimiterOptions): RequestHandler {
 
     if (window.count > max) {
       const retryAfter = Math.max(1, Math.ceil((window.resetAt - now) / 1000));
+      logger.warn('rate limit exceeded', {
+        path: sanitizePath(req.originalUrl),
+        retryAfter,
+      });
       res.setHeader('Retry-After', String(retryAfter));
       req.resume(); // drain an unread body before rejecting (POST uploads)
       next(tooManyRequests());

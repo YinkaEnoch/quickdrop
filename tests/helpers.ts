@@ -64,8 +64,8 @@ export async function startTestServer(overrides: Partial<Config> = {}): Promise<
   });
 
   const db = openDatabase(config.databasePath, logger);
-  const repository = new TransferRepository(db);
-  const storage = new FileStorage(config.storagePath);
+  const repository = new TransferRepository(db, logger);
+  const storage = new FileStorage(config.storagePath, logger);
   storage.init();
   const service = new TransferService({ db, repository, storage, logger, config });
   const cleanup = new TransferCleanup({

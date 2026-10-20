@@ -79,19 +79,38 @@ export class TransferService {
     const textContent = input.text !== null && input.text.length > 0 ? input.text : null;
     const files = input.files;
 
+    logger.debug('service create started', {
+      fileCount: files.length,
+      hasText: textContent !== null,
+      textBytes: textContent === null ? 0 : Buffer.byteLength(textContent),
+    });
+
     if (files.length === 0 && textContent === null) {
+      logger.warn('service create rejected: empty payload');
       throw badRequest('Add at least one file or some text to share.');
     }
     if (files.length > config.maxFilesPerTransfer) {
+      logger.warn('service create rejected: too many files', {
+        fileCount: files.length,
+        maxFiles: config.maxFilesPerTransfer,
+      });
       throw badRequest(`A transfer can contain at most ${config.maxFilesPerTransfer} files.`);
     }
     if (textContent !== null && Buffer.byteLength(textContent) > config.maxTextLengthBytes) {
+      logger.warn('service create rejected: text too large', {
+        textBytes: Buffer.byteLength(textContent),
+        maxTextBytes: config.maxTextLengthBytes,
+      });
       throw payloadTooLarge(
         `Text exceeds the ${Math.floor(config.maxTextLengthBytes / 1024)} KB limit.`,
       );
     }
     for (const file of files) {
       if (file.size > config.maxFileSizeBytes) {
+        logger.warn('service create rejected: file too large', {
+          fileBytes: file.size,
+          maxFileBytes: config.maxFileSizeBytes,
+        });
         throw payloadTooLarge('A file exceeds the size limit.');
       }
       // Rejects path-like staged names before anything is touched; a throw
@@ -99,6 +118,7 @@ export class TransferService {
       storage.fileIn(input.stagingPath, file.stagedName);
     }
     if (new Set(files.map((file) => file.stagedName)).size !== files.length) {
+      logger.warn('service create rejected: duplicate files', { fileCount: files.length });
       throw badRequest('The upload contained duplicate files.');
     }
 
@@ -158,7 +178,18 @@ export class TransferService {
             repository.insert(transfer, fileRecords);
             return;
           } catch (error) {
-            if (!isUniqueViolation(error) || attempt === KEY_INSERT_ATTEMPTS - 1) throw error;
+            if (!isUniqueViolation(error) || attempt === KEY_INSERT_ATTEMPTS - 1) {
+              logger.error('service create insert failed', {
+                transferId,
+                attempt: attempt + 1,
+                error,
+              });
+              throw error;
+            }
+            logger.warn('service create key collision, retrying', {
+              transferId,
+              attempt: attempt + 1,
+            });
             // Share-key collision: regenerate and retry inside the same
             // transaction (the failed statement rolled itself back only).
           }
@@ -174,6 +205,7 @@ export class TransferService {
       });
       return { transfer, files: fileRecords };
     } catch (error) {
+      logger.error('service create failed, rolling back dir', { transferId, error });
       // Rollback: never leave an orphan directory behind. Idempotent, and a
       // no-op when the move never happened (staging is swept by the caller).
       storage.removeDir(finalDir);
@@ -183,14 +215,28 @@ export class TransferService {
 
   /** Non-consuming lookup for the metadata endpoint; expired rows are deleted lazily. */
   get(rawKey: string, now = Date.now()): TransferBundle {
+    this.deps.logger.debug('service get started');
     const shareKey = normalizeShareKey(rawKey);
     const transfer = shareKey === null ? null : this.deps.repository.findByKey(shareKey);
-    if (transfer === null) throw transferNotFound();
+    if (transfer === null) {
+      this.deps.logger.debug('service get missed');
+      throw transferNotFound();
+    }
     if (transfer.expiresAt <= now) {
+      this.deps.logger.info('service get found expired transfer, deleting', {
+        transferId: transfer.id,
+      });
       this.delete(transfer.id);
       throw transferNotFound();
     }
-    return { transfer, files: this.deps.repository.filesByTransferId(transfer.id) };
+    const files = this.deps.repository.filesByTransferId(transfer.id);
+    this.deps.logger.debug('service get hit', {
+      transferId: transfer.id,
+      fileCount: files.length,
+      hasText: transfer.textContent !== null,
+      status: transfer.status,
+    });
+    return { transfer, files };
   }
 
   /**
@@ -201,10 +247,15 @@ export class TransferService {
    */
   prepareDownload(rawKey: string, now = Date.now()): DownloadPlan {
     const { logger, repository, storage } = this.deps;
+    logger.debug('service prepareDownload started');
     const { transfer, files } = this.get(rawKey, now);
 
-    if (!repository.claim(transfer.id, now)) throw transferBusy();
+    if (!repository.claim(transfer.id, now)) {
+      logger.warn('service prepareDownload claim lost (busy)', { transferId: transfer.id });
+      throw transferBusy();
+    }
     this.activeDownloads.add(transfer.id);
+    logger.debug('service prepareDownload claimed', { transferId: transfer.id });
 
     try {
       if (files.length > 0) {
@@ -222,9 +273,17 @@ export class TransferService {
       }
 
       const plan = this.buildPlan(transfer, files);
-      logger.info('download claimed', { transferId: transfer.id, kind: plan.kind });
+      logger.info('download claimed', {
+        transferId: transfer.id,
+        kind: plan.kind,
+        fileCount: files.length,
+      });
       return plan;
     } catch (error) {
+      logger.warn('service prepareDownload failed, releasing claim', {
+        transferId: transfer.id,
+        error,
+      });
       if (this.activeDownloads.has(transfer.id)) this.release(transfer.id);
       throw error;
     }
@@ -232,6 +291,7 @@ export class TransferService {
 
   /** Stream finished successfully: consume the transfer (rows + directory). */
   finalize(transferId: string): void {
+    this.deps.logger.debug('service finalize started', { transferId });
     this.delete(transferId);
     this.deps.logger.info('transfer consumed', { transferId });
   }
@@ -240,35 +300,66 @@ export class TransferService {
   release(transferId: string): boolean {
     // Gated on membership so we never release a claim this process does not
     // own (e.g. one a cleanup pass already handled).
-    if (!this.activeDownloads.delete(transferId)) return false;
-    return this.deps.repository.release(transferId);
+    if (!this.activeDownloads.delete(transferId)) {
+      this.deps.logger.debug('service release skipped (not owned)', { transferId });
+      return false;
+    }
+    const released = this.deps.repository.release(transferId);
+    this.deps.logger.debug('service release complete', { transferId, released });
+    return released;
   }
 
   /** User-initiated delete before any download; busy while a download runs. */
   cancel(rawKey: string, now = Date.now()): void {
+    this.deps.logger.debug('service cancel started');
     const bundle = this.get(rawKey, now);
-    if (bundle.transfer.status === 'downloading') throw transferBusy();
+    if (bundle.transfer.status === 'downloading') {
+      this.deps.logger.warn('service cancel rejected (busy)', {
+        transferId: bundle.transfer.id,
+      });
+      throw transferBusy();
+    }
     this.delete(bundle.transfer.id);
     this.deps.logger.info('transfer cancelled', { transferId: bundle.transfer.id });
   }
 
   /** Terminal delete: row (files cascade) plus directory. Always idempotent. */
   delete(transferId: string): void {
+    this.deps.logger.debug('service delete started', { transferId });
     this.activeDownloads.delete(transferId);
     this.deps.repository.delete(transferId);
     this.deps.storage.removeDir(this.deps.storage.transferDir(transferId));
+    this.deps.logger.debug('service delete complete', { transferId });
   }
 
   private buildPlan(transfer: TransferRecord, files: TransferFileRecord[]): DownloadPlan {
+    this.deps.logger.debug('service buildPlan started', {
+      transferId: transfer.id,
+      fileCount: files.length,
+      hasText: transfer.textContent !== null,
+    });
+    let plan: DownloadPlan;
     if (files.length === 0) {
       // create() guarantees text accompanies every file-less transfer.
-      if (transfer.textContent === null) throw internalError();
-      return { kind: 'text', transferId: transfer.id, text: transfer.textContent };
+      if (transfer.textContent === null) {
+        this.deps.logger.error('service buildPlan: file-less transfer has no text', {
+          transferId: transfer.id,
+        });
+        throw internalError();
+      }
+      plan = { kind: 'text', transferId: transfer.id, text: transfer.textContent };
+    } else {
+      const file = files[0];
+      if (files.length === 1 && transfer.textContent === null && file !== undefined) {
+        plan = { kind: 'file', transferId: transfer.id, file };
+      } else {
+        plan = { kind: 'zip', transferId: transfer.id, files, text: transfer.textContent };
+      }
     }
-    const file = files[0];
-    if (files.length === 1 && transfer.textContent === null && file !== undefined) {
-      return { kind: 'file', transferId: transfer.id, file };
-    }
-    return { kind: 'zip', transferId: transfer.id, files, text: transfer.textContent };
+    this.deps.logger.debug('service buildPlan complete', {
+      transferId: transfer.id,
+      kind: plan.kind,
+    });
+    return plan;
   }
 }
